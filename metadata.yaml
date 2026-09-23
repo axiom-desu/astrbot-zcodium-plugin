@@ -1,0 +1,10 @@
+name: astrbot_plugin_zcodium
+display_name: ZCodium 桥接
+desc: "把消息转发给 ZCodium agent 并流式回复；AstrBot 仅作传输层，不走自带 LLM。"
+version: v0.1.0
+author: moyamryia
+repo: https://github.com/axiom-desu/astrbot-zcodium-plugin
+keywords:
+  - zcodium
+  - bridge
+  - agent

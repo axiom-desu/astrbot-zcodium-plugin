@@ -1,0 +1,23 @@
+{
+  "bridge_url": {
+    "description": "ZCodium bridge WebSocket 地址",
+    "type": "text",
+    "default": "ws://127.0.0.1:0/bots/bridge/v2",
+    "hint": "实际端口见 ZCodium 数据目录下 bots-bridge.runtime.v2.json 的 url 字段。"
+  },
+  "bridge_token": {
+    "description": "Bridge Token",
+    "type": "text",
+    "default": "",
+    "hint": "bots-bridge.runtime.v2.json 的 token；以 Authorization: Bearer 发送。"
+  },
+  "channels": {
+    "description": "生效渠道（平台名）",
+    "type": "list",
+    "items": {
+      "type": "string"
+    },
+    "default": ["lark"],
+    "hint": "留空表示所有平台。飞书填 lark，QQ 填 aiocqhttp。"
+  }
+}
