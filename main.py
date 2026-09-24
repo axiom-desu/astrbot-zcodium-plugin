@@ -192,14 +192,16 @@ class ZCodiumBridgePlugin(Star):
         return not self.channels or event.get_platform_name() in self.channels
 
     def _actor(self, event: AstrMessageEvent) -> dict:
+        platform = event.get_platform_name()
         chat_type = "private" if event.is_private_chat() else "group"
+        # ZCodium 侧 channel 统一记为 astrbot；真实平台由插件用 id 前缀隔离，保证跨平台唯一。
         actor = {
-            "channel": event.get_platform_name(),
-            "externalUserId": event.get_sender_id() or event.get_session_id(),
+            "channel": "astrbot",
+            "externalUserId": f"{platform}:{event.get_sender_id() or event.get_session_id()}",
             "chatType": chat_type,
         }
         if chat_type == "group" and event.get_group_id():
-            actor["chatId"] = event.get_group_id()
+            actor["chatId"] = f"{platform}:{event.get_group_id()}"
         return actor
 
     @filter.event_message_type(filter.EventMessageType.ALL)
@@ -217,18 +219,18 @@ class ZCodiumBridgePlugin(Star):
 
         queue: asyncio.Queue = asyncio.Queue()
         command_id = uuid.uuid4().hex
-        self._inflight[command_id] = queue
+        request = _frame(
+            "command",
+            commandId=command_id,
+            actor=self._actor(event),
+            command={"type": "prompt", "text": text},
+        )
+        # 服务端 accepted.inReplyTo 用的是帧 id（而非 commandId），必须以帧 id 登记 inflight。
+        self._inflight[request["id"]] = queue
         try:
-            await self._send_frame(
-                _frame(
-                    "command",
-                    commandId=command_id,
-                    actor=self._actor(event),
-                    command={"type": "prompt", "text": text},
-                )
-            )
+            await self._send_frame(request)
         except Exception as error:  # noqa: BLE001 - 发送失败需要回执
-            self._inflight.pop(command_id, None)
+            self._inflight.pop(request["id"], None)
             await event.send(MessageChain([Plain(f"发送到 ZCodium 失败：{error}")]))
             return
 
