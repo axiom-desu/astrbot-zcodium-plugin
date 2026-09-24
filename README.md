@@ -1,7 +1,21 @@
 # astrbot_plugin_zcodium
 
+[![AstrBot 插件市场](https://img.shields.io/badge/AstrBot-插件市场-2f86bd)](https://cloud.astrbot.app/plugin/axiom-desu/astrbot_plugin_zcodium)
+
 把 AstrBot 收到的聊天消息转发给 **ZCodium** 的 bots bridge，并把 agent 输出流式回发。
 AstrBot 只做平台传输层，不走自带 LLM。
+
+> AstrBot 插件市场：<https://cloud.astrbot.app/plugin/axiom-desu/astrbot_plugin_zcodium>
+
+## 支持的 ZCodium 仓库
+
+本插件按 **bridge v2** 协议对接 ZCodium，兼容以下仓库：
+
+- [ZCodium-project/ZCodium](https://github.com/ZCodium-project/ZCodium)
+- [axiom-desu/ZCodium](https://github.com/axiom-desu/ZCodium)
+
+对应版本需已内置 AstrBot 桥接（`bots bridge` / `providers["astrbot"]`）；
+协议细节见仓库内 `.agents/specs/bots-astrbot-bridge.md`。
 
 ## 连接
 
