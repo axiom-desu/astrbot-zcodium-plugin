@@ -73,6 +73,12 @@ class ZCodiumBridgePlugin(Star):
         self._send_lock = asyncio.Lock()
         self._inflight: dict[str, asyncio.Queue] = {}
         self._streams: dict[str, asyncio.Queue] = {}
+        # bindingId → 已收到并 ack 的最大 seq。断线重连时随 hello.resume 上报，
+        # 服务端据此补投窗口内的 delivery，超窗则改发 snapshot（见 spec「幂等与恢复」）。
+        # 修复依据：此前 hello 不带 resume，服务端的补投/快照链路完全不会触发，
+        # 断线期间轮次流直接丢失，权限等待也可能被跳过。
+        self._ack_cursors: dict[str, int] = {}
+        self._bridge_enabled = True
 
     # ---------- 生命周期 ----------
 
@@ -102,12 +108,19 @@ class ZCodiumBridgePlugin(Star):
                         self.bridge_url, headers=headers, heartbeat=30
                     ) as ws:
                         self._ws = ws
+                        # 重连时上报各绑定已确认的 seq，让服务端补投窗口内 delivery。
+                        resume = [
+                            {"bindingId": binding_id, "seq": seq}
+                            for binding_id, seq in self._ack_cursors.items()
+                            if seq > 0
+                        ]
                         await self._send_frame(
                             _frame(
                                 "hello",
                                 clientId=PLUGIN_NAME,
                                 clientVersion="0.1.0",
                                 channels=self.channels,
+                                **({"resume": resume} if resume else {}),
                             )
                         )
                         logger.info("[zcodium] bridge 已连接")
@@ -138,7 +151,15 @@ class ZCodiumBridgePlugin(Star):
     async def _handle_frame(self, frame: dict) -> None:
         kind = frame.get("kind")
         if kind == "welcome":
-            logger.info("[zcodium] bridge 握手完成 enabled=%s", frame.get("enabled"))
+            # enabled=false 表示 ZCodium 侧关掉了这个 astrbot bot；继续发命令只会被拒绝，
+            # 这里显式告警，避免用户以为插件坏了。
+            enabled = frame.get("enabled")
+            if enabled is False:
+                self._bridge_enabled = False
+                logger.warning("[zcodium] bridge 已连接，但 ZCodium 侧 AstrBot bot 未启用。")
+            else:
+                self._bridge_enabled = True
+                logger.info("[zcodium] bridge 握手完成 enabled=%s", enabled)
             return
         if kind == "accepted":
             stream_id = frame.get("streamId")
@@ -152,6 +173,13 @@ class ZCodiumBridgePlugin(Star):
                 text = _payload_to_text(frame.get("payload") or {})
                 if text:
                     await queue.put(MessageChain([Plain(text)]))
+            # 记录每个绑定已确认的最大 seq，重连时用于 hello.resume 补投。
+            # 修复依据：delivery 的 seq 是「每绑定全局单调」，游标只需保留最大值。
+            binding_id = frame.get("bindingId")
+            seq = frame.get("seq")
+            if binding_id and isinstance(seq, int):
+                if seq > self._ack_cursors.get(binding_id, 0):
+                    self._ack_cursors[binding_id] = seq
             await self._ack(frame.get("id"))
             return
         if kind == "status":
@@ -215,6 +243,12 @@ class ZCodiumBridgePlugin(Star):
         event.should_call_llm(False)
         if self._ws is None or self._ws.closed:
             await event.send(MessageChain([Plain("ZCodium bridge 未连接。")]))
+            return
+        # welcome.enabled=false 时服务端不会受理命令，直接给出可操作的提示。
+        if not self._bridge_enabled:
+            await event.send(
+                MessageChain([Plain("ZCodium 侧的 AstrBot bot 未启用，请在 ZCodium 的 Bot 设置里打开。")])
+            )
             return
 
         queue: asyncio.Queue = asyncio.Queue()
